@@ -1,13 +1,3 @@
-# coding: shift-jis
-####################################################################################################
-# This script was tuned specifically for the AIST FREA environment (Fixed in 2019)
-#     AIST:National Institute of Advanced Industrial Science and Technology 
-#     FREA:Fukushima Renewable Energy Institute
-#
-# What is the AIST FREA environment
-#   Communication with SunSpecSVP is middleware called ExCon, and ExCon is
-#   a mechanism to communicate with inverters and simulators.
-####################################################################################################
 """
 Copyright (c) 2018, Sandia National Labs, SunSpec Alliance and CanmetENERGY
 All rights reserved.
@@ -45,9 +35,9 @@ import os
 import traceback
 from svpelab import gridsim
 from svpelab import loadsim
-###from svpelab import pvsim       <- Commented out because middleware is communicated using gridsim
+from svpelab import pvsim
 from svpelab import das
-###from svpelab import der         <- Commented out because middleware is communicated using gridsim
+from svpelab import der
 from svpelab import hil
 import script
 from svpelab import result as rslt
@@ -58,369 +48,8 @@ import collections
 import cmath
 import math
 
-import time                        # WT3000 compatible
-import subprocess                  # WT3000 compatible
-from subprocess import PIPE        # WT3000 compatible
-import re                          # WT3000 compatible
-import csv                         # WT3000 compatible
 
-import ctypes                      # WT3000 compatible
-from ctypes import *               # WT3000 compatible
-import threading                   # WT3000 compatible
-
-### WT3000 compatible
-### <START>
-def wt3000_format_set(dll, device_id):
-
-    ts.log('--------------WT3000 FORMAT SET command Start----------------')
-
-    rtn_up = {}
-    msg = ""
-
-    #------------------------
-    #SET Format
-    #------------------------
-    msg = ":NUMERIC:FORMAT ASCII"
-    rtn = dll.TmSend(device_id, msg)
-    if rtn == 0:
-        ts.log('@@@(WT3000) SET Format OK: %s' % (rtn))
-    else:
-        ts.log('@@@(WT3000) SET Format NG: %s' % (rtn))
-
-    #------------------------
-    #SET Number of Items
-    #------------------------
-    msg = ":NUMERIC:NORMAL:NUMBER 6"
-    rtn = dll.TmSend(device_id, msg)
-    if rtn == 0:
-        ts.log('@@@(WT3000) SET Number of Items OK: %s' % (rtn))
-    else:
-        ts.log('@@@(WT3000) SET Number of Items NG: %s' % (rtn))
-
-    #------------------------
-    #SET Items
-    #------------------------
-    msg = ":NUMERIC:NORMAL:"
-    msg = msg + "ITEM1 P,SIGMA,Total;"
-    msg = msg + "ITEM2 Q,SIGMA,Total;"
-    msg = msg + "ITEM3 S,SIGMA,Total;"
-    msg = msg + "ITEM4 VRMS,SIGMA,Total;"
-    msg = msg + "ITEM5 IRMS,SIGMA,Total;"
-    msg = msg + "ITEM6 LAMBDA,SIGMA,Total;"
-    rtn = dll.TmSend(device_id, msg)
-    if rtn == 0:
-        ts.log('@@@(WT3000) SET Items OK: %s' % (rtn))
-    else:
-        ts.log('@@@(WT3000) SET Items NG: %s' % (rtn))
-
-
-    ts.log('--------------WT3000 FORMATSET command End-----------------')
-
-    pass
-
-def wt3000_data_read(dll, device_id):
-
-    ts.log('--------------WT3000 command Start----------------')
-
-    rtn_up = {}
-    msg = ""
-
-    #------------------------
-    #SET VALUE?
-    #------------------------
-    msg = ":NUMERIC:NORMAL:VALUE?"
-    rtn = dll.TmSend(device_id, msg)
-    if rtn == 0:
-        ts.log('@@@(WT3000) SET VALUE? OK: %s' % (rtn))
-    else:
-        ts.log('@@@(WT3000) SET VALUE? NG: %s' % (rtn))
-
-
-    buf = ctypes.create_string_buffer(1024,1024)
-    bufsize = ctypes.c_int(1024)
-    length = ctypes.c_int()
-    rtn = dll.TmReceive(device_id, buf, bufsize, ctypes.pointer(length))
-    if rtn == 0:
-        ts.log('@@@(WT3000) RECEIVE OK: %s' % (rtn))
-    else:
-        ts.log('@@@(WT3000) RECEIVE NG: %s' % (rtn))
-
-    ts.log('buf.value: %s' % (buf.value))
-    ts.log('length: %s' % (length))
-
-
-    #------------------------
-    #Return Data Set
-    #------------------------
-    tmp_data = buf.value.split(",")
-    ts.log('@@@(WT3000) split: %s' % (tmp_data))
-
-    # Active power(P)
-    if tmp_data[0] == "NAN" or tmp_data[0] == "INF":
-        rtn_up['AC_P_1'] = 0
-        rtn_up['AC_P_2'] = 0
-        rtn_up['AC_P_3'] = 0
-    else:
-        rtn_up['AC_P_1'] = float(tmp_data[0])
-        rtn_up['AC_P_2'] = float(tmp_data[0])
-        rtn_up['AC_P_3'] = float(tmp_data[0])
-    ts.log('@@@(WT3000) Active power(P): %s' % (rtn_up['AC_P_1']))
-
-    # Reactive power(Q)
-    if tmp_data[1] == "NAN" or tmp_data[1] == "INF":
-        rtn_up['AC_Q_1'] = 0
-        rtn_up['AC_Q_2'] = 0
-        rtn_up['AC_Q_3'] = 0
-    else:
-        rtn_up['AC_Q_1'] = float(tmp_data[1])
-        rtn_up['AC_Q_2'] = float(tmp_data[1])
-        rtn_up['AC_Q_3'] = float(tmp_data[1])
-    ts.log('@@@(WT3000) Reactive power(Q): %s' % (rtn_up['AC_Q_1']))
-
-    # Apparent power(S)
-    if tmp_data[2] == "NAN" or tmp_data[2] == "INF":
-        rtn_up['AC_S_1'] = 0
-        rtn_up['AC_S_2'] = 0
-        rtn_up['AC_S_3'] = 0
-    else:
-        rtn_up['AC_S_1'] = float(tmp_data[2])
-        rtn_up['AC_S_2'] = float(tmp_data[2])
-        rtn_up['AC_S_3'] = float(tmp_data[2])
-    ts.log('@@@(WT3000) Apparent power(S): %s' % (rtn_up['AC_S_1']))
-
-    # Voltage(U)
-    if tmp_data[3] == "NAN" or tmp_data[3] == "INF":
-        rtn_up['AC_VRMS_1'] = 0
-        rtn_up['AC_VRMS_2'] = 0
-        rtn_up['AC_VRMS_3'] = 0
-    else:
-        rtn_up['AC_VRMS_1'] = float(tmp_data[3])
-        rtn_up['AC_VRMS_2'] = float(tmp_data[3])
-        rtn_up['AC_VRMS_3'] = float(tmp_data[3])
-    ts.log('@@@(WT3000) Voltage(U): %s' % (rtn_up['AC_VRMS_1']))
-
-    # Current(I)
-    if tmp_data[4] == "NAN" or tmp_data[4] == "INF":
-        rtn_up['AC_IRMS_1'] = 0
-        rtn_up['AC_IRMS_2'] = 0
-        rtn_up['AC_IRMS_3'] = 0
-    else:
-        rtn_up['AC_IRMS_1'] = float(tmp_data[4])
-        rtn_up['AC_IRMS_2'] = float(tmp_data[4])
-        rtn_up['AC_IRMS_3'] = float(tmp_data[4])
-    ts.log('@@@(WT3000) Current(I): %s' % (rtn_up['AC_IRMS_1']))
-
-    # Power factor(lambda)
-    if tmp_data[5] == "NAN" or tmp_data[5] == "INF":
-        rtn_up['AC_PF_1'] = 0
-        rtn_up['AC_PF_2'] = 0
-        rtn_up['AC_PF_3'] = 0
-    else:
-        rtn_up['AC_PF_1'] = float(tmp_data[5])
-        rtn_up['AC_PF_2'] = float(tmp_data[5])
-        rtn_up['AC_PF_3'] = float(tmp_data[5])
-    ts.log('@@@(WT3000) Power factor(lambda): %s' % (rtn_up['AC_PF_1']))
-
-
-    #------------------------
-    #Local Test Code start
-    #------------------------
-    # Active power(P)
-    rtn_up['AC_P_1'] = 3000
-    rtn_up['AC_P_2'] = 3000
-    rtn_up['AC_P_3'] = 3000
-
-    # Apparent power(S)
-    rtn_up['AC_S_1'] = 3100
-    rtn_up['AC_S_2'] = 3100
-    rtn_up['AC_S_3'] = 3100
-
-    # Reactive power(Q)
-    rtn_up['AC_Q_1'] = 100
-    rtn_up['AC_Q_2'] = 100
-    rtn_up['AC_Q_3'] = 100
-
-    # Voltage(U)
-    rtn_up['AC_VRMS_1'] = 190
-    rtn_up['AC_VRMS_2'] = 190
-    rtn_up['AC_VRMS_3'] = 190
-
-    # Current(I)
-    rtn_up['AC_IRMS_1'] = 205
-    rtn_up['AC_IRMS_2'] = 205
-    rtn_up['AC_IRMS_3'] = 205
-
-    # Power factor(lambda)
-    rtn_up['AC_PF_1'] = 0.98
-    rtn_up['AC_PF_2'] = 0.98
-    rtn_up['AC_PF_3'] = 0.98
-    #------------------------
-    #Local Test Code end
-    #------------------------
-
-    ts.log('--------------WT3000 command End-----------------')
-
-    return rtn_up
-
-### <END>
-
-
-### Add for Thread control
-### <START>
-def MeasureThread(e ,MeasurMachine ,writer_active ,writer_apparent ,writer_reactive ,writer_voltage ,writer_current ,writer_powerfactor ,m_time ,dll ,device_id ,phases):
-
-    ts.log('--------------MeasureThread Start----------------')
-
-    sv_time = time.time()
-
-    wt3000_format_set(dll, device_id)
-    ts.log('@@@wt3000_format_set()')
-
-    MeasureData = wt3000_data_read(dll, device_id)
-    ts.log('@@@wt3000_data_read()')
-
-    MeasureTime = time.time() - sv_time
-
-    #------------------------
-    # Active power
-    #------------------------
-#    if phases == 'Single Phase':
-#        grf_rec_active = [MeasureTime, (MeasureData.get('AC_P_1')/1000)]
-#    else:
-#        grf_rec_active = [MeasureTime, (MeasureData.get('AC_P_1')/1000)*3]
-    grf_rec_active = [MeasureTime, (MeasureData.get('AC_P_1')/1000)]
-    writer_active.writerow(grf_rec_active)
-    ts.log('grf_rec_active: %s ' % (grf_rec_active))
-
-    #------------------------
-    # Apparent power
-    #------------------------
-#    if phases == 'Single Phase':
-#        grf_rec_apparent = [MeasureTime, (MeasureData.get('AC_S_1')/1000)]
-#    else:
-#        grf_rec_apparent = [MeasureTime, (MeasureData.get('AC_S_1')/1000)*3]
-    grf_rec_apparent = [MeasureTime, (MeasureData.get('AC_S_1')/1000)]
-    writer_apparent.writerow(grf_rec_apparent)
-    ts.log('grf_rec_apparent: %s ' % (grf_rec_apparent))
-
-    #------------------------
-    # Reactive power
-    #------------------------
-#    if phases == 'Single Phase':
-#        grf_rec_reactive = [MeasureTime, (MeasureData.get('AC_Q_1')/1000)]
-#    else:
-#        grf_rec_reactive = [MeasureTime, (MeasureData.get('AC_Q_1')/1000)*3]
-    grf_rec_reactive = [MeasureTime, (MeasureData.get('AC_Q_1')/1000)]
-    writer_reactive.writerow(grf_rec_reactive)
-    ts.log('grf_rec_reactive: %s ' % (grf_rec_reactive))
-
-    #------------------------
-    # Voltage
-    #------------------------
-    wk_voltage = round(MeasureData.get('AC_VRMS_1'),2)
-    grf_rec_voltage = [MeasureTime, wk_voltage]
-    writer_voltage.writerow(grf_rec_voltage)
-    ts.log('grf_rec_voltage: %s ' % (grf_rec_voltage))
-
-    #------------------------
-    # Current
-    #------------------------
-    wk_current = round(MeasureData.get('AC_IRMS_1'),2)
-    grf_rec_current = [MeasureTime, wk_current]
-    writer_current.writerow(grf_rec_current)
-    ts.log('grf_rec_current: %s ' % (grf_rec_current))
-
-    #------------------------
-    # Power factor
-    #------------------------
-    wk_powerfactor = round(MeasureData.get('AC_PF_1'),2)
-    if wk_powerfactor >= 0:
-        wk_powerfactor = (wk_powerfactor * -100) + 100
-    else:
-        wk_powerfactor = (wk_powerfactor * -100) - 100
-    grf_rec_powerfactor = [MeasureTime, wk_powerfactor]
-    writer_powerfactor.writerow(grf_rec_powerfactor)
-    ts.log('grf_rec_powerfactor: %s ' % (grf_rec_powerfactor))
-
-#    for i in range(99999):
-    while not e.stop_event.is_set():
-        time.sleep(m_time)
-#        ts.sleep(m_time)
-        #event_is_set = e.wait()
-        #ts.log('@@@ Starting MeasureThread cnt = %s' % (i))
-
-        MeasureData = wt3000_data_read(dll, device_id)
-        ts.log('@@@wt3000_data_read()')
-
-        MeasureTime = time.time() - sv_time
-
-        #------------------------
-        # Active power
-        #------------------------
-#        if phases == 'Single Phase':
-#            grf_rec_active = [MeasureTime, (MeasureData.get('AC_P_1')/1000)]
-#        else:
-#            grf_rec_active = [MeasureTime, (MeasureData.get('AC_P_1')/1000)*3]
-        grf_rec_active = [MeasureTime, (MeasureData.get('AC_P_1')/1000)]
-        writer_active.writerow(grf_rec_active)
-        ts.log('grf_rec_active: %s ' % (grf_rec_active))
-
-        #------------------------
-        # Apparent power
-        #------------------------
-#        if phases == 'Single Phase':
-#            grf_rec_apparent = [MeasureTime, (MeasureData.get('AC_S_1')/1000)]
-#        else:
-#            grf_rec_apparent = [MeasureTime, (MeasureData.get('AC_S_1')/1000)*3]
-        grf_rec_apparent = [MeasureTime, (MeasureData.get('AC_S_1')/1000)]
-        writer_apparent.writerow(grf_rec_apparent)
-        ts.log('grf_rec_apparent: %s ' % (grf_rec_apparent))
-
-        #------------------------
-        # Reactive power
-        #------------------------
-#        if phases == 'Single Phase':
-#            grf_rec_reactive = [MeasureTime, (MeasureData.get('AC_Q_1')/1000)]
-#        else:
-#            grf_rec_reactive = [MeasureTime, (MeasureData.get('AC_Q_1')/1000)*3]
-        grf_rec_reactive = [MeasureTime, (MeasureData.get('AC_Q_1')/1000)]
-        writer_reactive.writerow(grf_rec_reactive)
-        ts.log('grf_rec_reactive: %s ' % (grf_rec_reactive))
-
-        #------------------------
-        # Voltage
-        #------------------------
-        wk_voltage = round(MeasureData.get('AC_VRMS_1'),2)
-        grf_rec_voltage = [MeasureTime, wk_voltage]
-        writer_voltage.writerow(grf_rec_voltage)
-        ts.log('grf_rec_voltage: %s ' % (grf_rec_voltage))
-
-        #------------------------
-        # Current
-        #------------------------
-        wk_current = round(MeasureData.get('AC_IRMS_1'),2)
-        grf_rec_current = [MeasureTime, wk_current]
-        writer_current.writerow(grf_rec_current)
-        ts.log('grf_rec_current: %s ' % (grf_rec_current))
-
-        #------------------------
-        # Power factor
-        #------------------------
-        wk_powerfactor = round(MeasureData.get('AC_PF_1'),2)
-        if wk_powerfactor >= 0:
-            wk_powerfactor = (wk_powerfactor * -100) + 100
-        else:
-            wk_powerfactor = (wk_powerfactor * -100) - 100
-        grf_rec_powerfactor = [MeasureTime, wk_powerfactor]
-        writer_powerfactor.writerow(grf_rec_powerfactor)
-        ts.log('grf_rec_powerfactor: %s ' % (grf_rec_powerfactor))
-
-    ts.log('--------------MeasureThread End------------------')
-    pass
-### <END>
-
-
-def q_p_criteria(pf, MSA_P, MSA_Q, daq, tr, step, q_initial, e, dll, device_id, start_time):
+def q_p_criteria(pf, MSA_P, MSA_Q, daq, tr, step, q_initial):
     """
     Determine Q(MSAs)
     :param pf:          power factor target
@@ -433,8 +62,6 @@ def q_p_criteria(pf, MSA_P, MSA_Q, daq, tr, step, q_initial, e, dll, device_id, 
     :return:    dictionnary q_p_analysis that contains passfail of response time requirements ( q_p_analysis['Q_TR_PF'])
     and test result accuracy requirements ( q_p_analysis['Q_FINAL_PF'] )
     """
-    ts.log('--------------q_p_criteria start------------------')
-
     tr_analysis = 'start'
     result_analysis = 'start'
     q_p_analysis = {}
@@ -449,41 +76,19 @@ def q_p_criteria(pf, MSA_P, MSA_Q, daq, tr, step, q_initial, e, dll, device_id, 
     This is only for the response time requirements (5.14.3.3 Criteria)
     """
     first_tr = q_initial['timestamp']+timedelta(seconds = tr)
-    ts.log('first_tr: %s ' % (first_tr))
     four_times_tr = q_initial['timestamp']+timedelta(seconds = 4*tr)
-    ts.log('four_times_tr: %s ' % (four_times_tr))
 
     try:
-        q_p_analysis['Q_INITIAL'] = 'No Data'           # ADD FREA
-        q_p_analysis['Q_FINAL'] = 'No Data'             # ADD FREA
-        q_p_analysis['Q_TR_PF'] = 'No Data'             # ADD FREA
-        q_p_analysis['Q_FINAL_PF'] = 'No Data'          # ADD FREA
-
         while tr_analysis == 'start':
-            ts.log('--------------while tr_analysis start------------------')
             time_to_sleep = first_tr - datetime.now()
             ts.sleep(time_to_sleep.total_seconds())
             now = datetime.now()
-            ts.log('now: %s ' % (now))
             if first_tr <= now:
-                ts.log('--------------(tr_analysis data_sample start)------------------')
                 daq.data_sample()
-                ts.log('--------------(tr_analysis data_sample end)------------------')
-###                data = daq.data_capture_read()       # WT3000 compatible
-                e.clear()                               # Add for Thread control
-                ts.log('--------------(tr_analysis wt3000_data_read start)------------------')
-                data = wt3000_data_read(dll, device_id) # WT3000 compatible
-                ts.log('--------------(tr_analysis wt3000_data_read end)------------------')
-                e.set()                                 # Add for Thread control
-                daq.sc['TIME'] = time.time() - start_time # ADD FREA
+                data = daq.data_capture_read()
                 daq.sc['V_MEAS'] = measurement_total(data=data, type_meas='V',log=False)
                 daq.sc['Q_MEAS'] = measurement_total(data=data, type_meas='Q',log=False)
                 daq.sc['P_MEAS'] = measurement_total(data=data, type_meas='P',log=False)
-#                ts.log('q_p_criteria(tr_analysis) V = %s%%  Q = %s%%  P = %s%%' % (daq.sc['V_MEAS'], daq.sc['Q_MEAS'], daq.sc['P_MEAS']))
-                ts.log('TIME: %s ' % (daq.sc['TIME']))
-                ts.log('V_MEAS: %s ' % (daq.sc['V_MEAS']))
-                ts.log('Q_MEAS: %s ' % (daq.sc['Q_MEAS']))
-                ts.log('P_MEAS: %s ' % (daq.sc['P_MEAS']))
                 # The variable q_tr is the value use to verify the time response requirement.
                 q_tr = daq.sc['Q_MEAS']
                 daq.sc['event'] = "{}_tr_1".format(step)
@@ -492,31 +97,16 @@ def q_p_criteria(pf, MSA_P, MSA_Q, daq, tr, step, q_initial, e, dll, device_id, 
                 tr_analysis = now
 
         while result_analysis == 'start':
-            ts.log('--------------while result_analysis start------------------')
             time_to_sleep = four_times_tr - datetime.now()
             ts.sleep(time_to_sleep.total_seconds())
             now = datetime.now()
-            ts.log('now: %s ' % (now))
             if four_times_tr <= now:
-                ts.log('--------------(result_analysis data_sample start)------------------')
                 daq.data_sample()
-                ts.log('--------------(result_analysis data_sample end)------------------')
-###                data = daq.data_capture_read()       # WT3000 compatible
-                e.clear()                               # Add for Thread control
-                ts.log('--------------(result_analysis wt3000_data_read start)------------------')
-                data = wt3000_data_read(dll, device_id) # WT3000 compatible
-                ts.log('--------------(result_analysis wt3000_data_read end)------------------')
-                e.set()                                 # Add for Thread control
-                daq.sc['TIME'] = time.time() - start_time # ADD FREA
+                data = daq.data_capture_read()
                 daq.sc['V_MEAS'] = measurement_total(data=data, type_meas='V',log=True)
                 daq.sc['Q_MEAS'] = measurement_total(data=data, type_meas='Q',log=True)
                 daq.sc['P_MEAS'] = measurement_total(data=data, type_meas='P',log=True)
                 daq.sc['event'] = "{}_tr_4".format(step)
-#                ts.log('q_p_criteria(result_analysis) V = %s%%  Q = %s%%  P = %s%%' % (daq.sc['V_MEAS'], daq.sc['Q_MEAS'], daq.sc['P_MEAS']))
-                ts.log('TIME: %s ' % (daq.sc['TIME']))
-                ts.log('V_MEAS: %s ' % (daq.sc['V_MEAS']))
-                ts.log('Q_MEAS: %s ' % (daq.sc['Q_MEAS']))
-                ts.log('P_MEAS: %s ' % (daq.sc['P_MEAS']))
                 # To calculate the min/max, you need the measured value
                 p_min = daq.sc['P_MEAS']+1.5*MSA_P
                 p_max = daq.sc['P_MEAS']-1.5*MSA_P
@@ -564,8 +154,6 @@ def q_p_criteria(pf, MSA_P, MSA_Q, daq, tr, step, q_initial, e, dll, device_id, 
                 # This is to get out of the while loop. It provides the timestamp of tr_4
                 result_analysis = now
 
-                ts.log('--------------q_p_criteria end------------------')
-
     except:
         daq.sc['V_MEAS'] = 'No Data'
         daq.sc['P_MEAS'] = 'No Data'
@@ -576,8 +164,7 @@ def q_p_criteria(pf, MSA_P, MSA_Q, daq, tr, step, q_initial, e, dll, device_id, 
 
     return q_p_analysis
 
-###def get_q_initial(daq, step):
-def get_q_initial(daq, step, dll, device_id, e):
+def get_q_initial(daq, step):
     """
     Sum the EUT reactive power from all phases
     :param daq:         data acquisition object in order to manipulated
@@ -588,10 +175,7 @@ def get_q_initial(daq, step, dll, device_id, e):
     q_initial={}
     q_initial['timestamp'] = datetime.now()
     daq.data_sample()
-###    data = daq.data_capture_read()       # WT3000 compatible
-    e.clear()                               # Add for Thread control
-    data = wt3000_data_read(dll, device_id) # WT3000 compatible
-    e.set()                                 # Add for Thread control
+    data = daq.data_capture_read()
     daq.sc['event'] = step
     daq.sc['Q_MEAS'] = measurement_total(data=data, type_meas='Q', log=True)
     daq.data_sample()
@@ -650,13 +234,9 @@ def measurement_total(data, type_meas,log):
         nb_phases = 2
 
     elif phases == 'Three phase':
-        ts.log('get_measurement_label %s' % (get_measurement_label(type_meas)[0]))
-        ts.log('get_measurement_label %s' % (get_measurement_label(type_meas)[1]))
-        ts.log('get_measurement_label %s' % (get_measurement_label(type_meas)[2]))
         value1 = data.get(get_measurement_label(type_meas)[0])
         value2 = data.get(get_measurement_label(type_meas)[1])
         value3 = data.get(get_measurement_label(type_meas)[2])
-        ts.log('get_measurement_label v1 = %s%%  v2 = %s%%  v3 = %s%%' % (value1, value2, value3))
         if log:
             ts.log_debug('        %s are: %s, %s, %s' % (get_measurement_label(type_meas),value1,value2,value3))
         value = value1 + value2 + value3
@@ -688,22 +268,6 @@ def test_run():
     result_summary = None
     step = None
     q_initial = None
-
-    grf_dat_file_active = None       # WT3000 compatible
-    grf_dat_file_apparent = None     # WT3000 compatible
-    grf_dat_file_reactive = None     # WT3000 compatible
-    grf_dat_file_voltage = None      # WT3000 compatible
-    grf_dat_file_curren = None       # WT3000 compatible
-    grf_dat_file_powerfactor = None  # WT3000 compatible
-
-    sv_time = -1                     # WT3000 compatible
-
-    dll = None                       # WT3000 compatible
-    tcp_control = ctypes.c_int(4)    # WT3000 compatible
-    device_id = ctypes.c_int()       # WT3000 compatible
-    e = None                         # WT3000 compatible
-
-    start_time = time.time()         # FREA ADD
 
     #sc_points = ['PF_TARGET', 'PF_MAX', 'PF_MIN']
 
@@ -769,25 +333,6 @@ def test_run():
             ts.log_error('No V_in target specify. Please select a V_IN test')
             raise
 
-        ip_addr = ts.param_value('cpf.ip_addr')              # WT3000 compatible
-        m_time = ts.param_value('cpf.m_time')                # Add for Thread control
-
-### WT3000 compatible
-### <START>
-        dll = ctypes.WinDLL(r"C:\\Python27\\DLLs\\tmctl")
-        ts.log('@@@(WT3000) DLL OK')
-
-        tcp_address = ip_addr + ",anonymous,"
-        rtn = dll.TmcInitialize(tcp_control, tcp_address, ctypes.pointer(device_id))
-        if rtn == 0:
-            ts.log('@@@(WT3000) CONNECT OK: %s' % (rtn))
-        else:
-            ts.log('@@@(WT3000) CONNECT NG: %s' % (tcp_address))
-
-        wt3000_format_set(dll, device_id)
-        ts.log('@@@wt3000_format_set()')
-### <END>
-
 
         """
         a) Connect the EUT according to the instructions and specifications provided by the manufacturer.
@@ -802,24 +347,19 @@ def test_run():
         if grid is not None:
             grid.voltage(v_nom)
 
-### Commented out because middleware is communicated using gridsim
-### <START>
-###        # pv simulator is initialized with test parameters and enabled
-###        pv = pvsim.pvsim_init(ts)
-###        if pv is not None:
-###            pv.power_set(p_rated)
-###            pv.power_on()  # Turn on DC so the EUT can be initialized
-### <END>
+        # pv simulator is initialized with test parameters and enabled
+        pv = pvsim.pvsim_init(ts)
+        if pv is not None:
+            pv.power_set(p_rated)
+            pv.power_on()  # Turn on DC so the EUT can be initialized
 
         # DAS soft channels
-###        das_points = {'sc': ('V_MEAS', 'P_MEAS', 'Q_MEAS', 'Q_TARGET_MIN', 'Q_TARGET_MAX', 'PF_TARGET', 'event')}            # <- Since the graph is not displayed, it is added
-        das_points = {'sc': ('TIME', 'V_MEAS', 'P_MEAS', 'Q_MEAS', 'Q_TARGET_MIN', 'Q_TARGET_MAX', 'PF_TARGET', 'event')}       # <- Since the graph is not displayed, it is added
+        das_points = {'sc': ('V_MEAS', 'P_MEAS', 'Q_MEAS', 'Q_TARGET_MIN', 'Q_TARGET_MAX', 'PF_TARGET', 'event')}
 
         # initialize data acquisition
         daq = das.das_init(ts, sc_points=das_points['sc'])
 
         if daq:
-            daq.sc['TIME'] = time.time()                            # <- Since the graph is not displayed, it is added
             daq.sc['V_MEAS'] = 100
             daq.sc['P_MEAS'] = 100
             daq.sc['Q_MEAS'] = 100
@@ -830,27 +370,17 @@ def test_run():
 
         ts.log('DAS device: %s' % daq.info())
 
-
-        # initialize waveform data acquisition
-        daq_wf = das.das_init(ts, 'das_wf')
-        if daq_wf is not None:                                      # DL850E compatible
-            ts.log('DAS Waveform device: %s' % (daq_wf.info()))     # DL850E compatible
-
-
         """
         b) Set all voltage trip parameters to the widest range of adjustability. Disable all reactive/active power
         control functions.
         """
         # it is assumed the EUT is on
-### Commented out because middleware is communicated using gridsim
-### <START>
-###        eut = der.der_init(ts)
-###        if eut is not None:
-###            eut.config()
-###            # disable volt/var curve
-###            eut.volt_var(params={'Ena': False})
-###            ts.log_debug('If not done already, set L/HVRT and trip parameters to the widest range of adjustability.')
-### <END>
+        eut = der.der_init(ts)
+        if eut is not None:
+            eut.config()
+            # disable volt/var curve
+            eut.volt_var(params={'Ena': False})
+            ts.log_debug('If not done already, set L/HVRT and trip parameters to the widest range of adjustability.')
 
         """
         c) Set all AC test source parameters to the nominal operating voltage and frequency.
@@ -875,61 +405,6 @@ def test_run():
         """
         t) Steps d) through q) may be repeated to test additional communication protocols - Run with another test.
         """
-
-
-### Graph drawing for FREA original gnuplot
-### <START>
-        e = threading.Event()
-        e.stop_event = threading.Event()
-
-        # Active power
-        grf_dat_file_active = ts.results_dir() + "\C_power_factor_active.csv"
-        grf_dat_file_active = re.sub(r'\\', "/", grf_dat_file_active)
-        ts.log('grf_dat_file_active = %s' % (grf_dat_file_active))
-        grf_dat_active = open(grf_dat_file_active, mode='w')
-        writer_active = csv.writer(grf_dat_active, lineterminator='\n')
-
-        # Apparent power
-        grf_dat_file_apparent = ts.results_dir() + "\C_power_factor_apparent.csv"
-        grf_dat_file_apparent = re.sub(r'\\', "/", grf_dat_file_apparent)
-        ts.log('grf_dat_file_apparent = %s' % (grf_dat_file_apparent))
-        grf_dat_apparent = open(grf_dat_file_apparent, mode='w')
-        writer_apparent = csv.writer(grf_dat_apparent, lineterminator='\n')
-
-        # Reactive power
-        grf_dat_file_reactive = ts.results_dir() + "\C_power_factor_reactive.csv"
-        grf_dat_file_reactive = re.sub(r'\\', "/", grf_dat_file_reactive)
-        ts.log('grf_dat_file_reactive = %s' % (grf_dat_file_reactive))
-        grf_dat_reactive = open(grf_dat_file_reactive, mode='w')
-        writer_reactive = csv.writer(grf_dat_reactive, lineterminator='\n')
-
-        # Voltage
-        grf_dat_file_voltage = ts.results_dir() + "\C_power_factor_voltage.csv"
-        grf_dat_file_voltage = re.sub(r'\\', "/", grf_dat_file_voltage)
-        ts.log('grf_dat_file_voltage = %s' % (grf_dat_file_voltage))
-        grf_dat_voltage = open(grf_dat_file_voltage, mode='w')
-        writer_voltage = csv.writer(grf_dat_voltage, lineterminator='\n')
-
-        # Current
-        grf_dat_file_current = ts.results_dir() + "\C_power_factor_current.csv"
-        grf_dat_file_current = re.sub(r'\\', "/", grf_dat_file_current)
-        ts.log('grf_dat_file_current = %s' % (grf_dat_file_current))
-        grf_dat_current = open(grf_dat_file_current, mode='w')
-        writer_current = csv.writer(grf_dat_current, lineterminator='\n')
-
-        # Power factor
-        grf_dat_file_powerfactor = ts.results_dir() + "\C_power_factor_powerfactor.csv"
-        grf_dat_file_powerfactor = re.sub(r'\\', "/", grf_dat_file_powerfactor)
-        ts.log('grf_dat_file_powerfactor = %s' % (grf_dat_file_powerfactor))
-        grf_dat_powerfactor = open(grf_dat_file_powerfactor, mode='w')
-        writer_powerfactor = csv.writer(grf_dat_powerfactor, lineterminator='\n')
-
-        thread = threading.Thread(target=MeasureThread, args=(e ,grid ,writer_active ,writer_apparent ,writer_reactive ,writer_voltage ,writer_current ,writer_powerfactor ,m_time ,dll, device_id, phases,))
-        thread.start()
-        time.sleep(1)
-#        ts.sleep(1)
-### <END>
-
 
         # For PV systems, this requires that Vmpp = Vin_nom and Pmpp = Prated.
         for v_in_label, v_in in v_in_targets.iteritems():
@@ -980,11 +455,9 @@ def test_run():
                 if pv is not None:
                     ts.log('Power step: setting PV simulator power to %s' % p_min)
                     step = 'Step G'
-###                    q_initial = get_q_initial(daq=daq,step=step)
-                    q_initial = get_q_initial(daq=daq, step=step,dll=dll,device_id=device_id,e=e)
+                    q_initial = get_q_initial(daq=daq,step=step)
                     pv.power_set(p_min)
-###                    q_p_analysis = q_p_criteria(pf=pf_target, MSA_P=MSA_P, MSA_Q=MSA_Q, daq=daq, tr=pf_response_time, step=step, q_initial=q_initial)
-                    q_p_analysis = q_p_criteria(pf=pf_target, MSA_P=MSA_P, MSA_Q=MSA_Q, daq=daq, tr=pf_response_time, step=step, q_initial=q_initial, e=e, dll=dll, device_id=device_id, start_time=start_time)
+                    q_p_analysis = q_p_criteria(pf=pf_target, MSA_P=MSA_P, MSA_Q=MSA_Q, daq=daq, tr=pf_response_time, step=step, q_initial=q_initial)
                     result_summary.write('%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' %
                                          (q_p_analysis['Q_FINAL_PF'], q_p_analysis['Q_TR_PF'], pf_target,
                                           daq.sc['V_MEAS'], daq.sc['P_MEAS'], q_p_analysis['Q_FINAL'],
@@ -995,13 +468,10 @@ def test_run():
                 if pv is not None:
                     ts.log('Power step: setting PV simulator power to %s' % p_rated)
                     step = 'Step H'
-###                    q_initial = get_q_initial(daq=daq,step=step)
-                    q_initial = get_q_initial(daq=daq,step=step,dll=dll,device_id=device_id,e=e)
+                    q_initial = get_q_initial(daq=daq,step=step)
                     pv.power_set(p_rated)
-###                    q_p_analysis = q_p_criteria(pf=pf_target, MSA_P=MSA_P, MSA_Q=MSA_Q, daq=daq, tr=pf_response_time,
-###                                                step=step, q_initial=q_initial)
                     q_p_analysis = q_p_criteria(pf=pf_target, MSA_P=MSA_P, MSA_Q=MSA_Q, daq=daq, tr=pf_response_time,
-                                                step=step, q_initial=q_initial, e=e, dll=dll, device_id=device_id, start_time=start_time)
+                                                step=step, q_initial=q_initial)
                     result_summary.write('%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' %
                                          (q_p_analysis['Q_FINAL_PF'], q_p_analysis['Q_TR_PF'], pf_target,
                                           daq.sc['V_MEAS'], daq.sc['P_MEAS'], q_p_analysis['Q_FINAL'],
@@ -1012,13 +482,10 @@ def test_run():
                     #   i) Step the AC test source voltage to (VL + av)
                     ts.log('Voltage step: setting Grid simulator voltage to %s' % (v_min + a_v))
                     step = 'Step I'
-###                    q_initial = get_q_initial(daq=daq,step=step)
-                    q_initial = get_q_initial(daq=daq,step=step,dll=dll,device_id=device_id,e=e)
+                    q_initial = get_q_initial(daq=daq,step=step)
                     grid.voltage(v_min + a_v)
-###                    q_p_analysis = q_p_criteria(pf=pf_target, MSA_P=MSA_P, MSA_Q=MSA_Q, daq=daq, tr=pf_response_time,
-###                                                step=step, q_initial=q_initial)
                     q_p_analysis = q_p_criteria(pf=pf_target, MSA_P=MSA_P, MSA_Q=MSA_Q, daq=daq, tr=pf_response_time,
-                                                step=step, q_initial=q_initial, e=e, dll=dll, device_id=device_id, start_time=start_time)
+                                                step=step, q_initial=q_initial)
                     result_summary.write('%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' %
                                          (q_p_analysis['Q_FINAL_PF'], q_p_analysis['Q_TR_PF'], pf_target,
                                           daq.sc['V_MEAS'], daq.sc['P_MEAS'], q_p_analysis['Q_FINAL'],
@@ -1027,13 +494,10 @@ def test_run():
                     #   j) Step the AC test source voltage to (VH - av)
                     ts.log('Voltage step: setting Grid simulator voltage to %s' % (v_max - a_v))
                     step = 'Step J'
-###                    q_initial = get_q_initial(daq=daq, step=step)
-                    q_initial = get_q_initial(daq=daq,step=step,dll=dll,device_id=device_id,e=e)
+                    q_initial = get_q_initial(daq=daq, step=step)
                     grid.voltage(v_max - a_v)
-###                    q_p_analysis = q_p_criteria(pf=pf_target, MSA_P=MSA_P, MSA_Q=MSA_Q, daq=daq, tr=pf_response_time,
-###                                                step=step, q_initial=q_initial)
                     q_p_analysis = q_p_criteria(pf=pf_target, MSA_P=MSA_P, MSA_Q=MSA_Q, daq=daq, tr=pf_response_time,
-                                                step=step, q_initial=q_initial, e=e, dll=dll, device_id=device_id, start_time=start_time)
+                                                step=step, q_initial=q_initial)
                     result_summary.write('%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' %
                                          (q_p_analysis['Q_FINAL_PF'], q_p_analysis['Q_TR_PF'], pf_target,
                                           daq.sc['V_MEAS'], daq.sc['P_MEAS'], q_p_analysis['Q_FINAL'],
@@ -1043,13 +507,10 @@ def test_run():
                     #   STD_CHANGE : We think at CanmetENERGY that this should be v_nom and not (v_min + a_v) before doing imbalance testing
                     ts.log('Voltage step: setting Grid simulator voltage to %s' % (v_nom))
                     step = 'Step K'
-###                    q_initial = get_q_initial(daq=daq, step=step)
-                    q_initial = get_q_initial(daq=daq,step=step,dll=dll,device_id=device_id,e=e)
+                    q_initial = get_q_initial(daq=daq, step=step)
                     grid.voltage(v_nom)
-###                    q_p_analysis = q_p_criteria(pf=pf_target, MSA_P=MSA_P, MSA_Q=MSA_Q, daq=daq, tr=pf_response_time,
-###                                                step=step, q_initial=q_initial)
                     q_p_analysis = q_p_criteria(pf=pf_target, MSA_P=MSA_P, MSA_Q=MSA_Q, daq=daq, tr=pf_response_time,
-                                                step=step, q_initial=q_initial, e=e, dll=dll, device_id=device_id, start_time=start_time)
+                                                step=step, q_initial=q_initial)
                     result_summary.write('%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' %
                                          (q_p_analysis['Q_FINAL_PF'], q_p_analysis['Q_TR_PF'], pf_target,
                                           daq.sc['V_MEAS'], daq.sc['P_MEAS'], q_p_analysis['Q_FINAL'],
@@ -1084,14 +545,11 @@ def test_run():
                 if grid is not None:
                     ts.log('Voltage step: setting Grid simulator to case A (IEEE 1547.1-Table 23)')
                     step = 'Step L'
-###                    q_initial = get_q_initial(daq=daq, step=step)
-                    q_initial = get_q_initial(daq=daq,step=step,dll=dll,device_id=device_id,e=e)
+                    q_initial = get_q_initial(daq=daq, step=step)
                     grid.config_asymmetric_phase_angles(mag=[1.07*v_nom, 0.967*v_nom, 0.967*v_nom],
                                                         angle=[0., 123.6, -123.6])
-###                    q_p_analysis = q_p_criteria(pf=pf_target, MSA_P=MSA_P, MSA_Q=MSA_Q, daq=daq, tr=pf_response_time,
-###                                                step=step, q_initial=q_initial)
                     q_p_analysis = q_p_criteria(pf=pf_target, MSA_P=MSA_P, MSA_Q=MSA_Q, daq=daq, tr=pf_response_time,
-                                                step=step, q_initial=q_initial, e=e, dll=dll, device_id=device_id, start_time=start_time)
+                                                step=step, q_initial=q_initial)
                     result_summary.write('%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' %
                                          (q_p_analysis['Q_FINAL_PF'], q_p_analysis['Q_TR_PF'], pf_target,
                                           daq.sc['V_MEAS'], daq.sc['P_MEAS'], q_p_analysis['Q_FINAL'],
@@ -1106,13 +564,10 @@ def test_run():
                 if grid is not None:
                     ts.log('Voltage step: setting Grid simulator voltage to %s' % v_nom)
                     step = 'Step M'
-###                    q_initial = get_q_initial(daq=daq,step=step)
-                    q_initial = get_q_initial(daq=daq,step=step,dll=dll,device_id=device_id,e=e)
+                    q_initial = get_q_initial(daq=daq,step=step)
                     grid.voltage(v_nom)
-###                    q_p_analysis = q_p_criteria(pf=pf_target, MSA_P=MSA_P, MSA_Q=MSA_Q, daq=daq, tr=pf_response_time,
-###                                                step=step, q_initial=q_initial)
                     q_p_analysis = q_p_criteria(pf=pf_target, MSA_P=MSA_P, MSA_Q=MSA_Q, daq=daq, tr=pf_response_time,
-                                                step=step, q_initial=q_initial, e=e, dll=dll, device_id=device_id, start_time=start_time)
+                                                step=step, q_initial=q_initial)
                     result_summary.write('%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' %
                                          (q_p_analysis['Q_FINAL_PF'], q_p_analysis['Q_TR_PF'], pf_target,
                                           daq.sc['V_MEAS'], daq.sc['P_MEAS'], q_p_analysis['Q_FINAL'],
@@ -1124,14 +579,11 @@ def test_run():
                 if grid is not None:
                     ts.log('Voltage step: setting Grid simulator to case B (IEEE 1547.1-Table 23)')
                     step = 'Step N'
-###                    q_initial = get_q_initial(daq=daq,step=step)
-                    q_initial = get_q_initial(daq=daq,step=step,dll=dll,device_id=device_id,e=e)
+                    q_initial = get_q_initial(daq=daq,step=step)
                     grid.config_asymmetric_phase_angles(mag=[0.91*v_nom, 1.048*v_nom, 1.048*v_nom],
                                                         angle=[0., 115.7, -115.7])
-###                    q_p_analysis = q_p_criteria(pf=pf_target, MSA_P=MSA_P, MSA_Q=MSA_Q, daq=daq, tr=pf_response_time,
-###                                                step=step, q_initial=q_initial)
                     q_p_analysis = q_p_criteria(pf=pf_target, MSA_P=MSA_P, MSA_Q=MSA_Q, daq=daq, tr=pf_response_time,
-                                                step=step, q_initial=q_initial, e=e, dll=dll, device_id=device_id, start_time=start_time)
+                                                step=step, q_initial=q_initial)
                     result_summary.write('%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' %
                                          (q_p_analysis['Q_FINAL_PF'], q_p_analysis['Q_TR_PF'], pf_target,
                                           daq.sc['V_MEAS'], daq.sc['P_MEAS'], q_p_analysis['Q_FINAL'],
@@ -1143,13 +595,10 @@ def test_run():
                 if grid is not None:
                     ts.log('Voltage step: setting Grid simulator voltage to %s' % v_nom)
                     step = 'Step O'
-###                    q_initial = get_q_initial(daq=daq, step=step)
-                    q_initial = get_q_initial(daq=daq,step=step,dll=dll,device_id=device_id,e=e)
+                    q_initial = get_q_initial(daq=daq, step=step)
                     grid.voltage(v_nom)
-###                    q_p_analysis = q_p_criteria(pf=pf_target, MSA_P=MSA_P, MSA_Q=MSA_Q, daq=daq, tr=pf_response_time,
-###                                                step=step, q_initial=q_initial)
                     q_p_analysis = q_p_criteria(pf=pf_target, MSA_P=MSA_P, MSA_Q=MSA_Q, daq=daq, tr=pf_response_time,
-                                                step=step, q_initial=q_initial, e=e, dll=dll, device_id=device_id, start_time=start_time)
+                                                step=step, q_initial=q_initial)
                     result_summary.write('%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' %
                                          (q_p_analysis['Q_FINAL_PF'], q_p_analysis['Q_TR_PF'], pf_target,
                                           daq.sc['V_MEAS'], daq.sc['P_MEAS'], q_p_analysis['Q_FINAL'],
@@ -1199,50 +648,25 @@ def test_run():
                 ds.to_csv(ts.result_file_path(dataset_filename))
                 result_params['plot.title'] = dataset_filename.split('.csv')[0]
                 ts.result_file(dataset_filename, params=result_params)
-
                 result = script.RESULT_COMPLETE
-
-### Graph drawing for FREA original gnuplot
-### <START>
-        e.stop_event.set()               # WT3000 compatible
-        thread.join()                    # WT3000 compatible
-
-        grf_dat_active.close()           # <- Since the graph is not displayed, it is added
-        grf_dat_apparent.close()         # <- Since the graph is not displayed, it is added
-        grf_dat_reactive.close()         # <- Since the graph is not displayed, it is added
-        grf_dat_voltage.close()          # <- Since the graph is not displayed, it is added
-        grf_dat_current.close()          # <- Since the graph is not displayed, it is added
-        grf_dat_powerfactor.close()      # <- Since the graph is not displayed, it is added
-
-        rtn = dll.TmFinish(device_id)                                  # WT3000 compatible
-        if rtn == 0:                                                   # WT3000 compatible
-            ts.log('@@@(WT3000) DISCONNECT OK: %s' % (rtn))            # WT3000 compatible
-        else:                                                          # WT3000 compatible
-            ts.log('@@@(WT3000) DISCONNECT NG: %s' % (rtn))            # WT3000 compatible
-### <END>
 
     except script.ScriptFail, e:
         reason = str(e)
         if reason:
             ts.log_error(reason)
     finally:
-        ts.log('--------------Finally START----------------')
 
         if grid is not None:
             grid.close()
-####        if pv is not None:
-####            if p_rated is not None:
-####                pv.power_set(p_rated)
-####            pv.close()
+        if pv is not None:
+            if p_rated is not None:
+                pv.power_set(p_rated)
+            pv.close()
         if daq is not None:
             daq.close()
-        if daq_wf is not None:             # DL850E compatible
-            daq_wf.data_capture(False)     # DL850E compatible
-            time.sleep(1)                  # DL850E compatible
-            daq_wf.close()                 # DL850E compatible
-####        if eut is not None:
-####            eut.fixed_pf(params={'Ena': False, 'PF': 1.0})
-####            eut.close()
+        if eut is not None:
+            eut.fixed_pf(params={'Ena': False, 'PF': 1.0})
+            eut.close()
         if rs is not None:
             rs.close()
         if chil is not None:
@@ -1255,75 +679,6 @@ def test_run():
         excelfile = ts.config_name() + '.xlsx'
         rslt.result_workbook(excelfile, ts.results_dir(), ts.result_dir())
         ts.result_file(excelfile)
-
-
-
-
-
-### Graph drawing for FREA original gnuplot
-### <START>
-        ### C_power_factor.png
-        gnuplot =  subprocess.Popen('gnuplot', shell=True, stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
-
-        gnuplot.stdin.write('set xlabel "Time (seconds)"\n')
-        gnuplot.stdin.write('set ylabel "Active Power(kW), Apparent power(kVA), Reactive power(kvar)"\n')
-
-###        set_over = round(float(s_rated)/1000) + (round(float(s_rated)/1000) * 0.1)
-###        set_under = ((round(float(s_rated)/1000)) * -1) - ((round(float(s_rated)/1000)) * -0.1)
-###        set_over = round(float(s_rated)/1000)
-###        set_under = ((round(float(s_rated)/1000)) * -1)
-        set_over = (round(float(s_rated)/1000)) * 1.25
-        set_under = (((round(float(s_rated)/1000)) * -1)) * 1.25
-
-        set_cmd = "set yrange [" + str(set_under) + ":" + str(set_over) + "]\n"
-        gnuplot.stdin.write(set_cmd)
-
-#        gnuplot.stdin.write('set ytics nomirror\n')
-        gnuplot.stdin.write('set y2label "Power factor(%)"\n')
-        gnuplot.stdin.write('set y2range [-6.25:6.25]\n')
-        gnuplot.stdin.write('set y2tics\n')
-#        gnuplot.stdin.write('set y2tics 0, 0.25\n')
-#        gnuplot.stdin.write('set y2tics "+0.1" 1.1, "0.0" 1.0, "-0.1" 0.9\n')
-
-        gnuplot.stdin.write('set term png size 1000, 1000\n')
-        gnuplot.stdin.write('set grid lw 1\n')
-###        gnuplot.stdin.write('set key box\n')
-
-        graph_out = ts.results_dir() + "\C_power_factor.png"
-        ts.log('graph_out = %s' % (graph_out))
-        graph_cmd = "set output " + "'" + graph_out + "'\n"
-        ts.log('graph_cmd = %s' % (graph_cmd))
-        gnuplot.stdin.write(graph_cmd)
-
-        graph_cmd = "set datafile separator ','\n"
-        gnuplot.stdin.write(graph_cmd)
-
-        # Active power
-        graph_cmd = "plot " + "'" + grf_dat_file_active + "' ti 'Active power Point' with linespoints pt 7 lc rgb 'orange' axis x1y1"
-        ts.log('graph_cmd = %s' % (graph_cmd))
-
-        # Apparent power
-        graph_cmd = graph_cmd + ", " + "'" + grf_dat_file_apparent + "' ti 'Apparent power Point' with linespoints pt 7 lc rgb 'gray' axis x1y1"
-        ts.log('graph_cmd = %s' % (graph_cmd))
-
-        # Reactive power
-        graph_cmd = graph_cmd + ", " + "'" + grf_dat_file_reactive + "' ti 'Reactive power Point' with linespoints pt 7 lc rgb 'royalblue' axis x1y1"
-        ts.log('graph_cmd = %s' % (graph_cmd))
-
-        # Power factor
-        graph_cmd = graph_cmd + ", " + "'" + grf_dat_file_powerfactor + "' ti 'Power factor Point' with linespoints pt 7 lc rgb 'gold' axis x1y2\n"
-        ts.log('graph_cmd = %s' % (graph_cmd))
-
-        gnuplot.stdin.write(graph_cmd)
-
-        ### Return setting
-        gnuplot.stdin.write('set terminal windows\n')
-        gnuplot.stdin.write('set output\n')
-### <END>
-
-
-
-
 
     return result
 
@@ -1381,9 +736,6 @@ info.param('cpf.v_in_nom', label='Test V_in_nom', default='Enabled', values=['Di
 info.param('cpf.v_in_min', label='Test V_in_min', default='Enabled', values=['Disabled', 'Enabled'])
 info.param('cpf.v_in_max', label='Test V_in_max', default='Enabled', values=['Disabled', 'Enabled'])
 
-info.param('cpf.ip_addr', label='WT3000 IP Address for NonExCon', default='192.168.127.200')      # WT3000 compatible
-info.param('cpf.m_time', label='Measurement time interval (secs)', default=0.5)                   # WT3000 compatible
-
 # EUT parameters
 # Prated - output power rating (W)
 # P'rated - for EUT's that can sink power, output power rating while sinking power (W)
@@ -1434,12 +786,11 @@ info.param('eut.phases', label='Phases', values=['Single phase', 'Split phase', 
 
 info.param('eut.pf_response_time', label='PF Response Time (secs)', default=1.0)
 
-###der.params(info)
+der.params(info)
 das.params(info)
-das.params(info, 'das_wf', 'Data Acquisition (Waveform)')
 gridsim.params(info)
 loadsim.params(info)
-###pvsim.params(info)
+pvsim.params(info)
 hil.params(info)
 
 
