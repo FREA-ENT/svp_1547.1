@@ -222,6 +222,7 @@ def wt3000_data_read(dll, device_id):
     ts.log('@@@(WT3000) Power factor(lambda): %s' % (rtn_up['AC_PF_1']))
 
 
+    """
     #------------------------
     #Local Test Code start
     #------------------------
@@ -257,6 +258,7 @@ def wt3000_data_read(dll, device_id):
     #------------------------
     #Local Test Code end
     #------------------------
+    """
 
     ts.log('--------------WT3000 command End-----------------')
 
@@ -771,6 +773,7 @@ def test_run():
 
         ip_addr = ts.param_value('cpf.ip_addr')              # WT3000 compatible
         m_time = ts.param_value('cpf.m_time')                # Add for Thread control
+        p_ramp_rate = ts.param_value('eut.ramp_rate')        # Change because middleware is communicated using gridsim
 
 ### WT3000 compatible
 ### <START>
@@ -934,9 +937,12 @@ def test_run():
         # For PV systems, this requires that Vmpp = Vin_nom and Pmpp = Prated.
         for v_in_label, v_in in v_in_targets.iteritems():
             ts.log('Starting test %s at v_in = %s' % (v_in_label, v_in))
-            if pv is not None:
-                pv.iv_curve_config(pmp=p_rated, vmp=v_in)
-                pv.irradiance_set(1000.)
+### Commented out because middleware is communicated using gridsim
+### <START>
+###            if pv is not None:
+###                pv.iv_curve_config(pmp=p_rated, vmp=v_in)
+###                pv.irradiance_set(1000.)
+### <END>
 
             """
             e) Enable constant power factor mode and set the EUT power factor to PFmin,inj.
@@ -954,11 +960,14 @@ def test_run():
                 daq.sc['PF_TARGET'] = pf_target
 
 
-                if eut is not None:
+###                if eut is not None:                             # Change because middleware is communicated using gridsim
+                if grid is not None:                               # Change because middleware is communicated using gridsim
                     parameters = {'Ena': True, 'PF': pf_target}
                     ts.log('PF set: %s' % parameters)
-                    eut.fixed_pf(params=parameters)
-                    pf_setting = eut.fixed_pf()
+###                    eut.fixed_pf(params=parameters)             # Change because middleware is communicated using gridsim
+                    grid.fixed_pf(params=parameters)               # Change because middleware is communicated using gridsim
+###                    pf_setting = eut.fixed_pf()                 # Change because middleware is communicated using gridsim
+                    pf_setting = grid.fixed_pf()                   # Change because middleware is communicated using gridsim
                     ts.log('PF setting read: %s' % pf_setting)
 
                 """
@@ -992,20 +1001,23 @@ def test_run():
                 """
                 h) Step the EUT's available active power to Prated.
                 """
-                if pv is not None:
-                    ts.log('Power step: setting PV simulator power to %s' % p_rated)
-                    step = 'Step H'
-###                    q_initial = get_q_initial(daq=daq,step=step)
-                    q_initial = get_q_initial(daq=daq,step=step,dll=dll,device_id=device_id,e=e)
-                    pv.power_set(p_rated)
+### Commented out because middleware is communicated using gridsim
+### <START>
+###                if pv is not None:
+###                    ts.log('Power step: setting PV simulator power to %s' % p_rated)
+###                    step = 'Step H'
+######                    q_initial = get_q_initial(daq=daq,step=step)
+###                    q_initial = get_q_initial(daq=daq,step=step,dll=dll,device_id=device_id,e=e)
+###                    pv.power_set(p_rated)
+######                    q_p_analysis = q_p_criteria(pf=pf_target, MSA_P=MSA_P, MSA_Q=MSA_Q, daq=daq, tr=pf_response_time,
+######                                                step=step, q_initial=q_initial)
 ###                    q_p_analysis = q_p_criteria(pf=pf_target, MSA_P=MSA_P, MSA_Q=MSA_Q, daq=daq, tr=pf_response_time,
-###                                                step=step, q_initial=q_initial)
-                    q_p_analysis = q_p_criteria(pf=pf_target, MSA_P=MSA_P, MSA_Q=MSA_Q, daq=daq, tr=pf_response_time,
-                                                step=step, q_initial=q_initial, e=e, dll=dll, device_id=device_id, start_time=start_time)
-                    result_summary.write('%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' %
-                                         (q_p_analysis['Q_FINAL_PF'], q_p_analysis['Q_TR_PF'], pf_target,
-                                          daq.sc['V_MEAS'], daq.sc['P_MEAS'], q_p_analysis['Q_FINAL'],
-                                          daq.sc['Q_TARGET_MIN'], daq.sc['Q_TARGET_MAX'], step, dataset_filename))
+###                                                step=step, q_initial=q_initial, e=e, dll=dll, device_id=device_id, start_time=start_time)
+###                    result_summary.write('%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' %
+###                                         (q_p_analysis['Q_FINAL_PF'], q_p_analysis['Q_TR_PF'], pf_target,
+###                                          daq.sc['V_MEAS'], daq.sc['P_MEAS'], q_p_analysis['Q_FINAL'],
+###                                          daq.sc['Q_TARGET_MIN'], daq.sc['Q_TARGET_MAX'], step, dataset_filename))
+### <END>
 
                 if grid is not None:
 
@@ -1015,6 +1027,7 @@ def test_run():
 ###                    q_initial = get_q_initial(daq=daq,step=step)
                     q_initial = get_q_initial(daq=daq,step=step,dll=dll,device_id=device_id,e=e)
                     grid.voltage(v_min + a_v)
+                    grid.power_setVV(p_rated * 1, s_rated, p_ramp_rate)                                              # <- Change to control from grid
 ###                    q_p_analysis = q_p_criteria(pf=pf_target, MSA_P=MSA_P, MSA_Q=MSA_Q, daq=daq, tr=pf_response_time,
 ###                                                step=step, q_initial=q_initial)
                     q_p_analysis = q_p_criteria(pf=pf_target, MSA_P=MSA_P, MSA_Q=MSA_Q, daq=daq, tr=pf_response_time,
@@ -1157,11 +1170,14 @@ def test_run():
                 """
                 p) Disable constant power factor mode. Power factor should return to unity.
                 """
-                if eut is not None:
+###                if eut is not None:                                # Change because middleware is communicated using gridsim
+                if grid is not None:                                  # Change because middleware is communicated using gridsim
                     parameters = {'Ena': False, 'PF': 1.0}
                     ts.log('PF set: %s' % parameters)
-                    eut.fixed_pf(params=parameters)
-                    pf_setting = eut.fixed_pf()
+###                    eut.fixed_pf(params=parameters)                # Change because middleware is communicated using gridsim
+                    grid.fixed_pf(params=parameters)                  # Change because middleware is communicated using gridsim
+###                    pf_setting = eut.fixed_pf()                    # Change because middleware is communicated using gridsim
+                    pf_setting = grid.fixed_pf()                      # Change because middleware is communicated using gridsim
                     ts.log('PF setting read: %s' % pf_setting)
                     daq.sc['event'] = 'Step P'
                     daq.data_sample()
@@ -1173,7 +1189,8 @@ def test_run():
                 """
                 q) Verify all reactive/active power control functions are disabled.
                 """
-                if eut is not None:
+###                if eut is not None:                                # Change because middleware is communicated using gridsim
+                if grid is not None:                                  # Change because middleware is communicated using gridsim
                     ts.log('Reactive/active power control functions are disabled.')
                     # TODO Implement ts.prompt functionality?
                     #meas = eut.measurements()
@@ -1229,21 +1246,22 @@ def test_run():
         ts.log('--------------Finally START----------------')
 
         if grid is not None:
+            grid.fixed_pf(params={'Ena': False, 'PF': 1.0})        # Change because middleware is communicated using gridsim
             grid.close()
-####        if pv is not None:
-####            if p_rated is not None:
-####                pv.power_set(p_rated)
+####        if pv is not None:                                     # Change because middleware is communicated using gridsim
+####            if p_rated is not None:                            # Change because middleware is communicated using gridsim
+####                pv.power_set(p_rated)                          # Change because middleware is communicated using gridsim
 ####            pv.close()
         if daq is not None:
             daq.close()
-        if daq_wf is not None:             # DL850E compatible
-            daq_wf.data_capture(False)     # DL850E compatible
-            time.sleep(1)                  # DL850E compatible
-            daq_wf.close()                 # DL850E compatible
-####        if eut is not None:
-####            eut.fixed_pf(params={'Ena': False, 'PF': 1.0})
-####            eut.close()
-        if rs is not None:
+        if daq_wf is not None:                                     # DL850E compatible
+            daq_wf.data_capture(False)                             # DL850E compatible
+            time.sleep(1)                                          # DL850E compatible
+            daq_wf.close()                                         # DL850E compatible
+####        if eut is not None:                                    # Change because middleware is communicated using gridsim
+####            eut.fixed_pf(params={'Ena': False, 'PF': 1.0})     # Change because middleware is communicated using gridsim
+####            eut.close()                                        # Change because middleware is communicated using gridsim
+        if rs is not None:                                         # Change because middleware is communicated using gridsim
             rs.close()
         if chil is not None:
             chil.close()
@@ -1361,6 +1379,13 @@ info = script.ScriptInfo(name=os.path.basename(__file__), run=run, version='1.1.
 # PFmid,inj - a power factor setting chosen to be less than 1 and greater than PFmin,inj
 # PFmid,ab - a power factor setting chosen to be less than 1 and greater than PFmin,ab
 
+### FREA ADD
+### <START>
+info.param_group('aist', label='AIST Parameters', glob=True)
+info.param('aist.script_version', label='Script Version', default='3.0.0')
+info.param('aist.library_version', label='Library Version (gridsim_frea_simulator)', default='5.0.0')
+### <END>
+
 info.param_group('cpf', label='Test Parameters')
 info.param('cpf.pf_min_inj', label='PFmin,inj activation', default='Enabled', values=['Disabled', 'Enabled'])
 info.param('cpf.pf_min_inj_value', label='PFmin,inj (Overexcited) (negative value, for SunSpec sign convention)',
@@ -1433,6 +1458,7 @@ info.param('eut.p_min_prime', label='P\'min: minimum active power while sinking 
 info.param('eut.phases', label='Phases', values=['Single phase', 'Split phase', 'Three phase'], default='Three phase')
 
 info.param('eut.pf_response_time', label='PF Response Time (secs)', default=1.0)
+info.param('eut.ramp_rate', label='Power Ramp Rate (0.01%/s)', default=0)          # Change because middleware is communicated using gridsim
 
 ###der.params(info)
 das.params(info)
