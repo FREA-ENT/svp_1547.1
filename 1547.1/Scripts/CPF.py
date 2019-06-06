@@ -45,7 +45,7 @@ import os
 import traceback
 from svpelab import gridsim
 from svpelab import loadsim
-###from svpelab import pvsim       <- Commented out because middleware is communicated using gridsim
+from svpelab import pvsim
 from svpelab import das
 ###from svpelab import der         <- Commented out because middleware is communicated using gridsim
 from svpelab import hil
@@ -67,6 +67,23 @@ import csv                         # WT3000 compatible
 import ctypes                      # WT3000 compatible
 from ctypes import *               # WT3000 compatible
 import threading                   # WT3000 compatible
+
+
+### TEST Logic
+### <START>
+
+def print_varsize():
+    #print "{}{: >25}{}{: >10}{}".format('|','Variable Name','|','Memory','|')
+    #print " ------------------------------------ "
+    ts.log("{}{: >25}{}{: >10}{}".format('|','Variable Name','|','Memory','|'))
+    ts.log(" ------------------------------------ ")
+    for var_name in dir():
+        if not var_name.startswith("_"):
+            #print "{}{: >25}{}{: >10}{}".format('|',var_name,'|',sys.getsizeof(eval(var_name)),'|')
+            ts.log("{}{: >25}{}{: >10}{}".format('|',var_name,'|',sys.getsizeof(eval(var_name)),'|'))
+    pass
+
+### <END>
 
 ### WT3000 compatible
 ### <START>
@@ -124,6 +141,7 @@ def wt3000_data_read(dll, device_id):
 
     rtn_up = {}
     msg = ""
+    tmp_data = {}
 
     #------------------------
     #SET VALUE?
@@ -142,8 +160,16 @@ def wt3000_data_read(dll, device_id):
     rtn = dll.TmReceive(device_id, buf, bufsize, ctypes.pointer(length))
     if rtn == 0:
         ts.log('@@@(WT3000) RECEIVE OK: %s' % (rtn))
+        tmp_data = buf.value.split(",")
+        ts.log('@@@(WT3000) split: %s' % (tmp_data))
     else:
         ts.log('@@@(WT3000) RECEIVE NG: %s' % (rtn))
+        tmp_data[0] = "NAN"
+        tmp_data[1] = "NAN"
+        tmp_data[2] = "NAN"
+        tmp_data[3] = "NAN"
+        tmp_data[4] = "NAN"
+        tmp_data[5] = "NAN"
 
     ts.log('buf.value: %s' % (buf.value))
     ts.log('length: %s' % (length))
@@ -152,8 +178,8 @@ def wt3000_data_read(dll, device_id):
     #------------------------
     #Return Data Set
     #------------------------
-    tmp_data = buf.value.split(",")
-    ts.log('@@@(WT3000) split: %s' % (tmp_data))
+###    tmp_data = buf.value.split(",")
+###    ts.log('@@@(WT3000) split: %s' % (tmp_data))
 
     # Active power(P)
     if tmp_data[0] == "NAN" or tmp_data[0] == "INF":
@@ -803,16 +829,15 @@ def test_run():
         # grid simulator is initialized with test parameters and enabled
         grid = gridsim.gridsim_init(ts)  # Turn on AC so the EUT can be initialized
         if grid is not None:
-            grid.voltage(v_nom)
+###            grid.voltage(v_nom)                                                                                              # Convert to line voltage
+            grid.config_asymmetric_phase_angles(mag=[v_nom, v_nom, v_nom], angle=[0.0, 120.0, -120.0])                          # Convert to line voltage
+            grid.volt_var(params={'Ena': False})                                                                                # Change because middleware is communicated using gridsim
 
-### Commented out because middleware is communicated using gridsim
-### <START>
-###        # pv simulator is initialized with test parameters and enabled
-###        pv = pvsim.pvsim_init(ts)
-###        if pv is not None:
-###            pv.power_set(p_rated)
-###            pv.power_on()  # Turn on DC so the EUT can be initialized
-### <END>
+        # pv simulator is initialized with test parameters and enabled
+        pv = pvsim.pvsim_init(ts)
+        if pv is not None:
+            pv.power_set(p_rated)
+            pv.power_on()  # Turn on DC so the EUT can be initialized
 
         # DAS soft channels
 ###        das_points = {'sc': ('V_MEAS', 'P_MEAS', 'Q_MEAS', 'Q_TARGET_MIN', 'Q_TARGET_MAX', 'PF_TARGET', 'event')}            # <- Since the graph is not displayed, it is added
@@ -834,8 +859,8 @@ def test_run():
         ts.log('DAS device: %s' % daq.info())
 
 
-        # initialize waveform data acquisition
-        daq_wf = das.das_init(ts, 'das_wf')
+        # initialize waveform data acquisition                      # DL850E compatible
+        daq_wf = das.das_init(ts, 'das_wf')                         # DL850E compatible
         if daq_wf is not None:                                      # DL850E compatible
             ts.log('DAS Waveform device: %s' % (daq_wf.info()))     # DL850E compatible
 
@@ -859,7 +884,8 @@ def test_run():
         c) Set all AC test source parameters to the nominal operating voltage and frequency.
         """
         if grid is not None:
-            grid.voltage(v_nom)
+###            grid.voltage(v_nom)                                                                       # Convert to line voltage
+            grid.config_asymmetric_phase_angles(mag=[v_nom, v_nom, v_nom], angle=[0.0, 120.0, -120.0])   # Convert to line voltage
 
         # open result summary file
         result_summary_filename = 'result_summary.csv'
@@ -937,12 +963,9 @@ def test_run():
         # For PV systems, this requires that Vmpp = Vin_nom and Pmpp = Prated.
         for v_in_label, v_in in v_in_targets.iteritems():
             ts.log('Starting test %s at v_in = %s' % (v_in_label, v_in))
-### Commented out because middleware is communicated using gridsim
-### <START>
-###            if pv is not None:
-###                pv.iv_curve_config(pmp=p_rated, vmp=v_in)
-###                pv.irradiance_set(1000.)
-### <END>
+            if pv is not None:
+                pv.iv_curve_config(pmp=p_rated, vmp=v_in)
+                pv.irradiance_set(1000.)
 
             """
             e) Enable constant power factor mode and set the EUT power factor to PFmin,inj.
@@ -1001,23 +1024,20 @@ def test_run():
                 """
                 h) Step the EUT's available active power to Prated.
                 """
-### Commented out because middleware is communicated using gridsim
-### <START>
-###                if pv is not None:
-###                    ts.log('Power step: setting PV simulator power to %s' % p_rated)
-###                    step = 'Step H'
+                if pv is not None:
+                    ts.log('Power step: setting PV simulator power to %s' % p_rated)
+                    step = 'Step H'
 ######                    q_initial = get_q_initial(daq=daq,step=step)
-###                    q_initial = get_q_initial(daq=daq,step=step,dll=dll,device_id=device_id,e=e)
-###                    pv.power_set(p_rated)
-######                    q_p_analysis = q_p_criteria(pf=pf_target, MSA_P=MSA_P, MSA_Q=MSA_Q, daq=daq, tr=pf_response_time,
-######                                                step=step, q_initial=q_initial)
+                    q_initial = get_q_initial(daq=daq,step=step,dll=dll,device_id=device_id,e=e)
+                    pv.power_set(p_rated)
 ###                    q_p_analysis = q_p_criteria(pf=pf_target, MSA_P=MSA_P, MSA_Q=MSA_Q, daq=daq, tr=pf_response_time,
-###                                                step=step, q_initial=q_initial, e=e, dll=dll, device_id=device_id, start_time=start_time)
-###                    result_summary.write('%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' %
-###                                         (q_p_analysis['Q_FINAL_PF'], q_p_analysis['Q_TR_PF'], pf_target,
-###                                          daq.sc['V_MEAS'], daq.sc['P_MEAS'], q_p_analysis['Q_FINAL'],
-###                                          daq.sc['Q_TARGET_MIN'], daq.sc['Q_TARGET_MAX'], step, dataset_filename))
-### <END>
+###                                                step=step, q_initial=q_initial)
+                    q_p_analysis = q_p_criteria(pf=pf_target, MSA_P=MSA_P, MSA_Q=MSA_Q, daq=daq, tr=pf_response_time,
+                                                step=step, q_initial=q_initial, e=e, dll=dll, device_id=device_id, start_time=start_time)
+                    result_summary.write('%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' %
+                                         (q_p_analysis['Q_FINAL_PF'], q_p_analysis['Q_TR_PF'], pf_target,
+                                          daq.sc['V_MEAS'], daq.sc['P_MEAS'], q_p_analysis['Q_FINAL'],
+                                          daq.sc['Q_TARGET_MIN'], daq.sc['Q_TARGET_MAX'], step, dataset_filename))
 
                 if grid is not None:
 
@@ -1026,8 +1046,9 @@ def test_run():
                     step = 'Step I'
 ###                    q_initial = get_q_initial(daq=daq,step=step)
                     q_initial = get_q_initial(daq=daq,step=step,dll=dll,device_id=device_id,e=e)
-                    grid.voltage(v_min + a_v)
-                    grid.power_setVV(p_rated * 1, s_rated, p_ramp_rate)                                              # <- Change to control from grid
+###                    grid.voltage(v_min + a_v)                                                                                   # Convert to line voltage
+                    grid.config_asymmetric_phase_angles(mag=[v_min + a_v, v_min + a_v, v_min + a_v], angle=[0.0, 120.0, -120.0])   # Convert to line voltage
+                    grid.power_setVV(p_rated * 1, s_rated, p_ramp_rate)                                                            # <- Change to control from grid
 ###                    q_p_analysis = q_p_criteria(pf=pf_target, MSA_P=MSA_P, MSA_Q=MSA_Q, daq=daq, tr=pf_response_time,
 ###                                                step=step, q_initial=q_initial)
                     q_p_analysis = q_p_criteria(pf=pf_target, MSA_P=MSA_P, MSA_Q=MSA_Q, daq=daq, tr=pf_response_time,
@@ -1042,7 +1063,8 @@ def test_run():
                     step = 'Step J'
 ###                    q_initial = get_q_initial(daq=daq, step=step)
                     q_initial = get_q_initial(daq=daq,step=step,dll=dll,device_id=device_id,e=e)
-                    grid.voltage(v_max - a_v)
+###                    grid.voltage(v_max - a_v)                                                                                   # Convert to line voltage
+                    grid.config_asymmetric_phase_angles(mag=[v_max - a_v, v_max - a_v, v_max - a_v], angle=[0.0, 120.0, -120.0])   # Convert to line voltage
 ###                    q_p_analysis = q_p_criteria(pf=pf_target, MSA_P=MSA_P, MSA_Q=MSA_Q, daq=daq, tr=pf_response_time,
 ###                                                step=step, q_initial=q_initial)
                     q_p_analysis = q_p_criteria(pf=pf_target, MSA_P=MSA_P, MSA_Q=MSA_Q, daq=daq, tr=pf_response_time,
@@ -1058,7 +1080,8 @@ def test_run():
                     step = 'Step K'
 ###                    q_initial = get_q_initial(daq=daq, step=step)
                     q_initial = get_q_initial(daq=daq,step=step,dll=dll,device_id=device_id,e=e)
-                    grid.voltage(v_nom)
+###                    grid.voltage(v_nom)                                                                                         # Convert to line voltage
+                    grid.config_asymmetric_phase_angles(mag=[v_nom, v_nom, v_nom], angle=[0.0, 120.0, -120.0])                     # Convert to line voltage
 ###                    q_p_analysis = q_p_criteria(pf=pf_target, MSA_P=MSA_P, MSA_Q=MSA_Q, daq=daq, tr=pf_response_time,
 ###                                                step=step, q_initial=q_initial)
                     q_p_analysis = q_p_criteria(pf=pf_target, MSA_P=MSA_P, MSA_Q=MSA_Q, daq=daq, tr=pf_response_time,
@@ -1121,7 +1144,8 @@ def test_run():
                     step = 'Step M'
 ###                    q_initial = get_q_initial(daq=daq,step=step)
                     q_initial = get_q_initial(daq=daq,step=step,dll=dll,device_id=device_id,e=e)
-                    grid.voltage(v_nom)
+###                    grid.voltage(v_nom)                                                                        # Convert to line voltage
+                    grid.config_asymmetric_phase_angles(mag=[v_nom, v_nom, v_nom], angle=[0.0, 120.0, -120.0])    # Convert to line voltage
 ###                    q_p_analysis = q_p_criteria(pf=pf_target, MSA_P=MSA_P, MSA_Q=MSA_Q, daq=daq, tr=pf_response_time,
 ###                                                step=step, q_initial=q_initial)
                     q_p_analysis = q_p_criteria(pf=pf_target, MSA_P=MSA_P, MSA_Q=MSA_Q, daq=daq, tr=pf_response_time,
@@ -1158,7 +1182,8 @@ def test_run():
                     step = 'Step O'
 ###                    q_initial = get_q_initial(daq=daq, step=step)
                     q_initial = get_q_initial(daq=daq,step=step,dll=dll,device_id=device_id,e=e)
-                    grid.voltage(v_nom)
+###                    grid.voltage(v_nom)                                                                       # Convert to line voltage
+                    grid.config_asymmetric_phase_angles(mag=[v_nom, v_nom, v_nom], angle=[0.0, 120.0, -120.0])   # Convert to line voltage
 ###                    q_p_analysis = q_p_criteria(pf=pf_target, MSA_P=MSA_P, MSA_Q=MSA_Q, daq=daq, tr=pf_response_time,
 ###                                                step=step, q_initial=q_initial)
                     q_p_analysis = q_p_criteria(pf=pf_target, MSA_P=MSA_P, MSA_Q=MSA_Q, daq=daq, tr=pf_response_time,
@@ -1245,13 +1270,17 @@ def test_run():
     finally:
         ts.log('--------------Finally START----------------')
 
+        # TEST Logic start
+        print_varsize()
+        # TEST Logic end
+
         if grid is not None:
             grid.fixed_pf(params={'Ena': False, 'PF': 1.0})        # Change because middleware is communicated using gridsim
             grid.close()
-####        if pv is not None:                                     # Change because middleware is communicated using gridsim
-####            if p_rated is not None:                            # Change because middleware is communicated using gridsim
-####                pv.power_set(p_rated)                          # Change because middleware is communicated using gridsim
-####            pv.close()
+        if pv is not None:
+            if p_rated is not None:
+                pv.power_set(p_rated)
+            pv.close()
         if daq is not None:
             daq.close()
         if daq_wf is not None:                                     # DL850E compatible
@@ -1465,7 +1494,7 @@ das.params(info)
 das.params(info, 'das_wf', 'Data Acquisition (Waveform)')
 gridsim.params(info)
 loadsim.params(info)
-###pvsim.params(info)
+pvsim.params(info)
 hil.params(info)
 
 
